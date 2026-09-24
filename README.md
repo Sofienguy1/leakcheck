@@ -1,5 +1,7 @@
 # leakcheck
 
+[![tests](https://github.com/Sofienguy1/leakcheck/actions/workflows/tests.yml/badge.svg)](https://github.com/Sofienguy1/leakcheck/actions/workflows/tests.yml) [![PyPI](https://img.shields.io/pypi/v/leakcheck-ml)](https://pypi.org/project/leakcheck-ml/) [![Python](https://img.shields.io/pypi/pyversions/leakcheck-ml)](https://pypi.org/project/leakcheck-ml/)
+
 **Catch data leakage before it ruins your model.**
 
 > Machine-learning data leakage, not security leaks: `leakcheck` finds problems in train/test splits that make a model look better than it really is.
@@ -23,8 +25,10 @@ leakcheck  train: 1,600 rows × 7 cols   test: 500 rows × 7 cols
 ## Install
 
 ```bash
-pip install git+https://github.com/Sofienguy1/leakcheck
+pip install leakcheck-ml
 ```
+
+The package is `leakcheck-ml` on PyPI; the command and the import are both `leakcheck`.
 
 ## Usage
 
@@ -76,7 +80,7 @@ pytest
 - [x] Near-duplicate detection with MinHash + LSH (rows that are *almost* identical)
 - [x] Group leakage (same patient/user in both train and test)
 - [ ] GitHub Action
-- [ ] Publish to PyPI
+- [x] Publish to PyPI
 - [ ] HTML report
 
 ## License

@@ -1,17 +1,31 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "leakcheck"
+name = "leakcheck-ml"
 dynamic = ["version"]
 description = "Detect train/test data leakage before you train a model."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Sofie Nguyen" }]
-keywords = ["machine-learning", "data-leakage", "data-quality", "mlops", "cli"]
+keywords = ["machine-learning", "data-leakage", "data-quality", "mlops", "cli", "train-test-split"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = ["pandas>=2.0", "numpy>=1.24"]
+
+[project.urls]
+Homepage = "https://github.com/Sofienguy1/leakcheck"
+Issues = "https://github.com/Sofienguy1/leakcheck/issues"
 
 [project.optional-dependencies]
 parquet = ["pyarrow"]
