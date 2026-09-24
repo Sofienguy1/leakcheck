@@ -322,12 +322,80 @@ def _detect_time_columns(train: pd.DataFrame, test: pd.DataFrame) -> list[str]:
     return found
 
 
+# Words that suggest a column identifies an entity (a person, device, account...) rather than a row.
+_ENTITY_WORDS = ("id", "user", "patient", "customer", "client", "subject", "session", "account", "device",
+                 "household", "person", "member", "player", "driver", "student", "employee", "store", "hospital")
+
+
+def _group_columns(train: pd.DataFrame, test: pd.DataFrame, target: str | None,
+                   group_col: str | None = None) -> list[str]:
+    """The explicit group column, or auto-detected ones: entity-sounding names whose values repeat in train.
+    Repeats are what separate a group ID (patient 17 has 5 visits) from a row number (1, 2, 3... restarting in
+    each file), which would overlap between files without meaning anything."""
+    if group_col:
+        return [group_col]
+    found = []
+    for col in _shared_feature_columns(train, test, target):
+        name = col.lower()
+        if not (name.endswith("id") or any(w in name for w in _ENTITY_WORDS[1:])):
+            continue
+        s = train[col].dropna()
+        if _is_number(s) and not pd.api.types.is_integer_dtype(s):
+            continue  # measurements like "user_rating" are floats, IDs aren't
+        n_groups = s.nunique()
+        if n_groups >= 20 and len(s) / max(n_groups, 1) >= 1.2:
+            found.append(col)
+    return found
+
+
+def check_group_leakage(train: pd.DataFrame, test: pd.DataFrame, target: str | None = None,
+                        group_col: str | None = None) -> list[Finding]:
+    """The same entity (patient, user, customer...) in both train and test. The model can learn to recognise the
+    entity instead of the pattern, and then fails on new entities. Fix: split by group, e.g. GroupShuffleSplit."""
+    findings = []
+    for col in _group_columns(train, test, target, group_col):
+        if col not in train.columns or col not in test.columns:
+            findings.append(Finding("group-leakage", FAIL, f"Group column '{col}' missing from train or test"))
+            continue
+
+        # Exact copies are the duplicates check's job; count only rows that are otherwise new.
+        shared = _shared_feature_columns(train, test, target)
+        copied = _row_hashes(test[shared]).isin(set(_row_hashes(train[shared])))
+        rest = test.loc[~copied.to_numpy(), col].dropna()
+
+        train_groups = set(train[col].dropna())
+        in_train = rest.isin(train_groups)
+        test_groups = rest.unique()
+        leaked_groups = rest[in_train].unique()
+        n_rows, pct = int(in_train.sum()), float(in_train.mean() * 100) if len(rest) else 0.0
+        details = {"column": col, "leaked_groups": len(leaked_groups), "test_groups": len(test_groups),
+                   "leaked_rows": n_rows, "percent_rows": round(pct, 2),
+                   "example_groups": [str(g) for g in leaked_groups[:5]]}
+
+        if n_rows == 0:
+            findings.append(Finding("group-leakage", PASS, f"No '{col}' groups are shared between train and test",
+                                    details))
+            continue
+        # An explicit group column must never overlap; an auto-detected one gets a little slack.
+        status = FAIL if group_col or pct >= 5 else WARN
+        findings.append(Finding(
+            "group-leakage", status,
+            f"{len(leaked_groups)} of {len(test_groups)} '{col}' groups ({n_rows} test rows, {pct:.1f}%) also "
+            f"appear in train — split by group instead of by row",
+            details,
+        ))
+    return findings
+
+
 def run_all(train: pd.DataFrame, test: pd.DataFrame, target: str | None = None,
-            time_col: str | None = None, similarity: float = 0.75) -> list[Finding]:
+            time_col: str | None = None, similarity: float = 0.75, group_col: str | None = None) -> list[Finding]:
+    groups = _group_columns(train, test, target, group_col)
     return [
         *check_duplicates(train, test, target),
         *check_near_duplicates(train, test, target, similarity),
-        *check_target_leakage(train, target),
+        *check_group_leakage(train, test, target, group_col),
+        # Group IDs "predict" the target when each entity has one outcome; that's group leakage, reported above.
+        *check_target_leakage(train.drop(columns=[g for g in groups if g in train.columns]), target),
         *check_id_columns(train, test, target),
         *check_temporal(train, test, time_col),
     ]

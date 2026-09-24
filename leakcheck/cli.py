@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("test", help="test data (.csv, .tsv or .parquet)")
     parser.add_argument("-t", "--target", help="name of the target (label) column")
     parser.add_argument("--time-col", help="time column; test rows must come after all train rows")
+    parser.add_argument("-g", "--group-col",
+                        help="entity column (e.g. patient_id); the same value must not be in both train and test")
     parser.add_argument("--similarity", type=float, default=0.75, metavar="0-1",
                         help="share of values two rows must share to count as near-duplicates (default: 0.75)")
     parser.add_argument("--json", action="store_true", help="output findings as JSON")
@@ -42,7 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     train, test = load(args.train), load(args.test)
     if not 0 < args.similarity <= 1:
         parser.error("--similarity must be between 0 and 1")
-    findings = run_all(train, test, target=args.target, time_col=args.time_col, similarity=args.similarity)
+    findings = run_all(train, test, target=args.target, time_col=args.time_col, similarity=args.similarity,
+                       group_col=args.group_col)
 
     print(to_json(findings) if args.json else to_text(findings, train.shape, test.shape))
 

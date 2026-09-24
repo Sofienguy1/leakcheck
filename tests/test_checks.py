@@ -4,12 +4,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from leakcheck.checks import (FAIL, PASS, WARN, check_duplicates, check_id_columns, check_near_duplicates,
-                              check_target_leakage, check_temporal)
+from leakcheck.checks import (FAIL, PASS, WARN, check_duplicates, check_group_leakage, check_id_columns,
+                              check_near_duplicates, check_target_leakage, check_temporal, run_all)
 from leakcheck.cli import main
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "examples"))
-from make_demo import make  # noqa: E402
+from make_demo import make, make_patients  # noqa: E402
 
 
 def clean_data(n=500, seed=1):
@@ -161,3 +161,72 @@ def test_lookalikes_at_chance_level_pass():
                        "port": rng.choice(["S", "C", "Q"], 3000), "sibsp": rng.integers(0, 3, 3000)})
     [f] = check_near_duplicates(df.iloc[:2400], df.iloc[2400:])
     assert f.status == PASS
+
+
+def visits(n_users=200, seed=4):
+    rng = np.random.default_rng(seed)
+    user = np.repeat(np.arange(n_users), rng.integers(2, 6, n_users))
+    return pd.DataFrame({"user_id": user, "clicks": rng.poisson(5, len(user)),
+                         "minutes": rng.exponential(10, len(user)).round(1),
+                         "churned": rng.integers(0, 2, len(user))})
+
+
+def test_group_leakage_random_row_split():
+    df = visits().sample(frac=1, random_state=0)
+    train, test = df.iloc[:600], df.iloc[600:]
+    [f] = check_group_leakage(train, test, "churned")  # auto-detected from the name + repeats
+    assert f.status == FAIL and f.details["column"] == "user_id" and f.details["leaked_groups"] > 0
+
+
+def test_group_split_passes():
+    df = visits()
+    train, test = df[df.user_id < 160], df[df.user_id >= 160]
+    [f] = check_group_leakage(train, test, "churned", group_col="user_id")
+    assert f.status == PASS
+
+
+def test_explicit_group_col_fails_on_any_overlap():
+    df = visits()
+    train = df[df.user_id < 160]
+    test = pd.concat([df[df.user_id >= 160], df[df.user_id == 0].head(1).assign(clicks=999)])
+    [f] = check_group_leakage(train, test, "churned", group_col="user_id")
+    assert f.status == FAIL and f.details["leaked_rows"] == 1
+
+
+def test_row_numbers_restarting_per_file_are_not_groups():
+    # Many CSVs have an "Id" 1..n in each file; values overlap but mean nothing.
+    rng = np.random.default_rng(5)
+    train = pd.DataFrame({"Id": range(1, 801), "x": rng.normal(size=800), "y": rng.normal(size=800)})
+    test = pd.DataFrame({"Id": range(1, 201), "x": rng.normal(size=200), "y": rng.normal(size=200)})
+    assert check_group_leakage(train, test, "y") == []
+
+
+def test_low_cardinality_categories_are_not_groups():
+    rng = np.random.default_rng(6)
+    df = pd.DataFrame({"device_type": rng.choice(["ios", "android", "web"], 1000), "y": rng.normal(size=1000)})
+    assert check_group_leakage(df.iloc[:800], df.iloc[800:], "y") == []
+
+
+def test_exact_duplicates_not_double_counted_as_groups():
+    df = visits()
+    train, test = df[df.user_id < 160], df[df.user_id >= 160]
+    [f] = check_group_leakage(train, pd.concat([test, train.head(10)]), "churned", group_col="user_id")
+    assert f.status == PASS
+
+
+def test_group_id_not_reported_as_target_leakage():
+    # When each patient has one outcome, patient_id "predicts" it perfectly; that's group leakage, not a proxy.
+    df = visits()
+    df["churned"] = df["user_id"] % 2
+    df = df.sample(frac=1, random_state=1)
+    found = run_all(df.iloc[:600], df.iloc[600:], target="churned")
+    assert not any(f.check == "target-leakage" and f.status != PASS for f in found)
+    assert any(f.check == "group-leakage" and f.status == FAIL for f in found)
+
+
+def test_demo_patients_group_leakage():
+    train, test = make_patients()
+    found = run_all(train, test, target="diagnosis")
+    [g] = [f for f in found if f.check == "group-leakage"]
+    assert g.status == FAIL and g.details["column"] == "patient_id"
+    assert g.details["percent_rows"] > 80  # most test visits belong to patients seen in training

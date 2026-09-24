@@ -1,6 +1,7 @@
-"""Generate a house-price dataset with deliberately planted leakage, for demos and tests.
+"""Generate demo datasets with deliberately planted leakage, for demos and tests.
 
-    python examples/make_demo.py   ->  examples/train.csv, examples/test.csv
+    python examples/make_demo.py   ->  examples/train.csv, examples/test.csv                   (house prices)
+                                       examples/patients_train.csv, examples/patients_test.csv (hospital visits)
 """
 
 from pathlib import Path
@@ -43,9 +44,31 @@ def make(n: int = 2000, seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
     return train, test
 
 
+def make_patients(n_patients: int = 300, seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Hospital visits, several per patient, split by row instead of by patient -> group leakage."""
+    rng = np.random.default_rng(seed)
+    visits = rng.integers(2, 8, n_patients)
+    patient = np.repeat(np.arange(1, n_patients + 1), visits)
+    age = np.repeat(rng.integers(25, 85, n_patients), visits)
+    risk = np.repeat(rng.normal(0, 1, n_patients), visits)  # hidden per-patient trait
+    n = len(patient)
+
+    df = pd.DataFrame({
+        "patient_id": [f"P{p:04d}" for p in patient],
+        "age": age,
+        "blood_pressure": (120 + 12 * risk + rng.normal(0, 8, n)).round(),
+        "cholesterol": (5.2 + 0.6 * risk + rng.normal(0, 0.4, n)).round(1),
+        "heart_rate": rng.normal(75, 10, n).round(),
+        "diagnosis": np.where(risk + 0.02 * (age - 55) + rng.normal(0, 0.5, n) > 0.8, "at_risk", "healthy"),
+    })
+    df = df.sample(frac=1, random_state=seed).reset_index(drop=True)  # the mistake: a random row split
+    cut = int(len(df) * 0.8)
+    return df.iloc[:cut], df.iloc[cut:]
+
+
 if __name__ == "__main__":
     out = Path(__file__).parent
-    train, test = make()
-    train.to_csv(out / "train.csv", index=False)
-    test.to_csv(out / "test.csv", index=False)
-    print(f"wrote {out / 'train.csv'} ({len(train)} rows) and {out / 'test.csv'} ({len(test)} rows)")
+    for name, (train, test) in {"": make(), "patients_": make_patients()}.items():
+        train.to_csv(out / f"{name}train.csv", index=False)
+        test.to_csv(out / f"{name}test.csv", index=False)
+        print(f"wrote {out / f'{name}train.csv'} ({len(train)} rows) and {out / f'{name}test.csv'} ({len(test)} rows)")
