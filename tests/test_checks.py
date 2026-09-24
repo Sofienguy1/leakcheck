@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from leakcheck.checks import (FAIL, PASS, WARN, check_duplicates, check_id_columns, check_target_leakage,
-                              check_temporal)
+from leakcheck.checks import (FAIL, PASS, WARN, check_duplicates, check_id_columns, check_near_duplicates,
+                              check_target_leakage, check_temporal)
 from leakcheck.cli import main
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "examples"))
@@ -102,3 +102,62 @@ def test_cli_exit_codes(tmp_path):
 
     pd.concat([test, train.head(30)]).to_csv(tmp_path / "leaky.csv", index=False)
     assert main([str(tmp_path / "train.csv"), str(tmp_path / "leaky.csv"), "-t", "y"]) == 1
+
+
+def wide_data(n=2000, seed=2):
+    rng = np.random.default_rng(seed)
+    df = pd.DataFrame({f"f{i}": rng.normal(size=n) for i in range(6)})
+    df["city"] = rng.choice(["Bergen", "Oslo", "Trondheim"], n)
+    return df.iloc[: int(n * 0.8)], df.iloc[int(n * 0.8):]
+
+
+def test_clean_data_has_no_near_duplicates():
+    train, test = wide_data()
+    assert statuses(check_near_duplicates(train, test)) == {PASS}
+
+
+def test_detects_slightly_changed_copies():
+    train, test = wide_data()
+    copies = train.sample(50, random_state=0).copy()
+    copies["f0"] = copies["f0"] + 0.0001        # tiny numeric change
+    copies["city"] = " " + copies["city"].str.upper() + " "  # formatting change
+    copies["f5"] = 99.0                          # one column completely different
+    [f] = check_near_duplicates(train, pd.concat([test, copies]))
+    assert f.status == FAIL and f.details["count"] == 50
+
+
+def test_near_duplicates_ignore_ids_and_skip_exact_copies():
+    train, test = wide_data()
+    train = train.assign(row_id=range(len(train)))
+    test = test.assign(row_id=range(10_000, 10_000 + len(test)))
+    exact = train.head(10)
+    new_id = train.iloc[10:30].assign(row_id=range(50_000, 50_020))
+    [f] = check_near_duplicates(train, pd.concat([test, exact, new_id]))
+    assert f.details["count"] == 20  # exact copies belong to the duplicates check
+    assert f.details["ignored_id_columns"] == ["row_id"]
+
+
+def test_near_duplicates_scale_to_large_data():
+    import time
+    train, test = wide_data(n=200_000)
+    start = time.perf_counter()
+    check_near_duplicates(train, test)
+    assert time.perf_counter() - start < 30
+
+
+def test_demo_catches_relisted_rows():
+    train, test = make()
+    [f] = check_near_duplicates(train, test, "price_nok")
+    # 40 planted re-listings on top of a few coincidental look-alikes; flagged because it beats the baseline.
+    assert f.status == FAIL
+    assert f.details["count"] >= 40
+    assert f.details["z_score"] >= 3  # far more look-alikes than chance explains
+
+
+def test_lookalikes_at_chance_level_pass():
+    # Low-dimensional data where many rows naturally resemble each other: no leak, so no alarm.
+    rng = np.random.default_rng(3)
+    df = pd.DataFrame({"sex": rng.choice(["m", "f"], 3000), "cls": rng.integers(1, 4, 3000),
+                       "port": rng.choice(["S", "C", "Q"], 3000), "sibsp": rng.integers(0, 3, 3000)})
+    [f] = check_near_duplicates(df.iloc[:2400], df.iloc[2400:])
+    assert f.status == PASS

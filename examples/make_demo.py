@@ -31,8 +31,15 @@ def make(n: int = 2000, seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
     df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
     train, test = df.iloc[: int(n * 0.8)], df.iloc[int(n * 0.8):].copy()
 
-    # Copy 60 training rows into test -> duplicate leakage.
-    test = pd.concat([test, train.sample(60, random_state=seed)], ignore_index=True)
+    copied = train.sample(100, random_state=seed)
+    # 60 exact copies of training rows -> duplicate leakage.
+    exact = copied.iloc[:60]
+    # 40 re-listed copies: new ID, slightly different euro price -> near-duplicate leakage.
+    relisted = copied.iloc[60:].assign(
+        listing_id=np.arange(900_000, 900_040),
+        final_price_eur=lambda d: (d["final_price_eur"] + rng.normal(0, 30, len(d))).round(),
+    )
+    test = pd.concat([test, exact, relisted], ignore_index=True)
     return train, test
 
 

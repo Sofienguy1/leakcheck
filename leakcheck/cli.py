@@ -32,13 +32,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("test", help="test data (.csv, .tsv or .parquet)")
     parser.add_argument("-t", "--target", help="name of the target (label) column")
     parser.add_argument("--time-col", help="time column; test rows must come after all train rows")
+    parser.add_argument("--similarity", type=float, default=0.75, metavar="0-1",
+                        help="share of values two rows must share to count as near-duplicates (default: 0.75)")
     parser.add_argument("--json", action="store_true", help="output findings as JSON")
     parser.add_argument("--strict", action="store_true", help="exit with code 1 on warnings too")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(argv)
 
     train, test = load(args.train), load(args.test)
-    findings = run_all(train, test, target=args.target, time_col=args.time_col)
+    if not 0 < args.similarity <= 1:
+        parser.error("--similarity must be between 0 and 1")
+    findings = run_all(train, test, target=args.target, time_col=args.time_col, similarity=args.similarity)
 
     print(to_json(findings) if args.json else to_text(findings, train.shape, test.shape))
 
