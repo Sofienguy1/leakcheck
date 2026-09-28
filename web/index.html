@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>leakcheck — catch ML data leakage</title>
+<meta name="description" content="Check a machine-learning train/test split for data leakage. Runs entirely in your browser; your data never leaves your computer.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%234f46e5'/><path d='M10 17l4 4 8-10' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="nav wrap">
+  <a class="brand" href="/"><span class="logo">✓</span> leakcheck</a>
+  <nav>
+    <a href="https://github.com/Sofienguy1/leakcheck">GitHub</a>
+    <a href="https://pypi.org/project/leakcheck-ml/">PyPI</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Catch data leakage<br>before it ruins your model.</h1>
+    <p class="lede">A model that scores 99% in testing and fails in production usually has a leak: the same rows or patients on both sides of the split, a feature that secretly contains the answer, or training on the future. Drop in your train and test files and find out in seconds.</p>
+    <p class="privacy"><span aria-hidden="true">🔒</span> Runs entirely in your browser. Your files are never uploaded.</p>
+  </section>
+
+  <section class="card" aria-labelledby="step1">
+    <div class="card-head">
+      <h2 id="step1"><span class="step">1</span> Load your data</h2>
+      <span id="engine" class="pill">Starting Python…</span>
+    </div>
+    <div class="drops">
+      <label class="drop" id="drop-train" data-name="train">
+        <input type="file" accept=".csv,.tsv,.tab,.parquet" hidden>
+        <strong>Training set</strong>
+        <span class="drop-hint">Drop a file or click to choose<br><small>.csv · .tsv · .parquet</small></span>
+      </label>
+      <label class="drop" id="drop-test" data-name="test">
+        <input type="file" accept=".csv,.tsv,.tab,.parquet" hidden>
+        <strong>Test set</strong>
+        <span class="drop-hint">Drop a file or click to choose<br><small>.csv · .tsv · .parquet</small></span>
+      </label>
+    </div>
+    <div class="demos">
+      <span>No data handy? Try a demo with planted leaks:</span>
+      <button class="ghost" data-demo="houses">🏠 House prices</button>
+      <button class="ghost" data-demo="patients">🏥 Hospital visits</button>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="step2" id="config" hidden>
+    <h2 id="step2"><span class="step">2</span> Configure</h2>
+    <div class="fields">
+      <label>Target column <small>what the model predicts</small>
+        <select id="target"></select></label>
+      <label>Group column <small>patient, user… (optional)</small>
+        <select id="group"></select></label>
+      <label>Time column <small>optional</small>
+        <select id="time"></select></label>
+      <label>Near-duplicate match <small><output id="sim-out">75%</output> of values</small>
+        <input type="range" id="similarity" min="0.5" max="1" step="0.05" value="0.75"></label>
+    </div>
+    <button id="run" class="primary">Check for leakage</button>
+  </section>
+
+  <section id="results" class="card" aria-live="polite" hidden></section>
+
+  <section class="checks">
+    <h2>What it checks</h2>
+    <div class="grid">
+      <article><h3>Duplicates</h3><p>Test rows the model already saw in training. Rows are hashed so the check runs in linear time.</p></article>
+      <article><h3>Near-duplicates</h3><p>Copies with small changes, found with MinHash + LSH and only flagged when well above what chance explains.</p></article>
+      <article><h3>Group leakage</h3><p>The same patient, user or customer on both sides of the split, so the model learns the person, not the pattern.</p></article>
+      <article><h3>Target leakage</h3><p>Features that are the answer in disguise, like the price in another currency.</p></article>
+      <article><h3>ID columns</h3><p>Unique row identifiers a model can memorise instead of learning.</p></article>
+      <article><h3>Temporal leakage</h3><p>Time data split at random, so the model trains on the future.</p></article>
+    </div>
+  </section>
+
+  <section class="cli">
+    <h2>Use it in your pipeline</h2>
+    <p>The same code runs from the command line and exits with code 1 when it finds leakage, so it can block a CI build.</p>
+    <pre><code>pip install leakcheck-ml
+leakcheck train.csv test.csv --target label</code></pre>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Open source, MIT licensed · <a href="https://github.com/Sofienguy1/leakcheck">Sofienguy1/leakcheck</a> · <span id="versions"></span></p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
